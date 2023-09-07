@@ -2,17 +2,25 @@ project_name: castsponsorskip
 before:
   hooks:
     - go run ./internal/generate/completions
-    - go run ./internal/generate/manpages --version='{{ .Version }}' --date='{{ .CommitDate }}'
+    - go run ./internal/generate/manpages --version={{ .Version }} --date={{ .CommitDate }}
 builds:
   - env:
       - CGO_ENABLED=0
     flags:
       - -trimpath
+    ldflags:
+      - -s
+      - -w
+      - -X main.version=v{{.Version}}
+      - -X main.commit={{.ShortCommit}}
+      - -X main.date={{.Date}}
+      - -X main.builtBy=goreleaser
     goarch:
       - amd64
       - arm
       - arm64
     goarm:
+      - "6"
       - "7"
 archives:
   - format: tar.gz
@@ -29,16 +37,25 @@ archives:
 checksum:
   name_template: "checksums.txt"
 snapshot:
-  name_template: "{{ incpatch .Version }}-next"
+  name_template: "{{ incpatch .Version }}-beta"
 changelog:
   sort: asc
   filters:
     exclude:
       - '^docs'
       - '^test'
+  groups:
+    - title: Features
+      order: 0
+      regexp: "^(feat)"
+    - title: Fixes
+      order: 1
+      regexp: "^(fix|perf)"
+    - title: Others
+      order: 999
 brews:
   - homepage: https://github.com/gabe565/CastSponsorSkip
-    description: Skip sponsored YouTube content on all local Google Cast devices
+    description: Skip YouTube ads and sponsorships on all local Google Cast devices
     license: GPL-3.0
     repository:
       owner: gabe565
@@ -69,6 +86,13 @@ dockers:
       - "--platform=linux/amd64"
   - <<: *dockers
     image_templates:
+      - ghcr.io/gabe565/{{ .ProjectName }}:{{ .Version }}-armv6
+    goarch: arm
+    goarm: 6
+    build_flag_templates:
+      - "--platform=linux/arm/v6"
+  - <<: *dockers
+    image_templates:
       - ghcr.io/gabe565/{{ .ProjectName }}:{{ .Version }}-armv7
     goarch: arm
     goarm: 7
@@ -85,6 +109,7 @@ docker_manifests:
     name_template: ghcr.io/gabe565/{{ .ProjectName }}:latest
     image_templates:
       - ghcr.io/gabe565/{{ .ProjectName }}:{{ .Version }}-amd64
+      - ghcr.io/gabe565/{{ .ProjectName }}:{{ .Version }}-armv6
       - ghcr.io/gabe565/{{ .ProjectName }}:{{ .Version }}-armv7
       - ghcr.io/gabe565/{{ .ProjectName }}:{{ .Version }}-arm64v8
   - <<: *docker_manifests
@@ -97,7 +122,7 @@ nfpms:
   - id: packages
     vendor: Gabe Cook
     homepage: https://github.com/gabe565/CastSponsorSkip
-    description: Skip sponsored YouTube content on all local Google Cast devices
+    description: Skip YouTube ads and sponsorships on all local Google Cast devices
     license: GPL-3.0
     maintainer: Gabe Cook <gabe565@gmail.com>
     formats:
@@ -123,16 +148,26 @@ nfpms:
       - src: ./systemd/{{ .ProjectName }}.service
         dst: /usr/lib/systemd/system/{{ .ProjectName }}.service
         type: config
+        packager: rpm
+      - src: ./systemd/{{ .ProjectName }}.service
+        dst: /lib/systemd/system/{{ .ProjectName }}.service
+        type: config
+        packager: deb
 publishers:
   - name: fury.io
     ids:
       - packages
     dir: "{{ dir .ArtifactPath }}"
-    cmd: curl -sf -Fpackage=@{{ .ArtifactName }} https://{{ .Env.FURY_TOKEN }}@push.fury.io/gabe565/
+    cmd: |
+      bash -c '
+      if [[ "{{ .ArtifactName }}" != *.deb || "{{ .Arm }}" != 7 ]]; then
+        curl -sf -Fpackage=@{{ .ArtifactName }} https://{{ .Env.FURY_TOKEN }}@push.fury.io/gabe565/
+      fi
+      '
 aurs:
   - name: "{{ .ProjectName }}-bin"
     homepage: https://github.com/gabe565/CastSponsorSkip
-    description: Skip sponsored YouTube content on all local Google Cast devices
+    description: Skip YouTube ads and sponsorships on all local Google Cast devices
     maintainers:
       - Gabe Cook <gabe565@gmail.com>
     license: GPL-3.0

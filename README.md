@@ -64,7 +64,7 @@ Additionally, CastSponsorSkip will look for skippable YouTube ads, and automatic
 
 1. If you don't have it already, install the `ca-certificates` package
    ```shell
-   sudo yum install ca-certificates
+   sudo dnf install ca-certificates
    ```
 
 2. Add gabe565 rpm repository to `/etc/yum.repos.d/gabe565.repo`
@@ -78,7 +78,7 @@ Additionally, CastSponsorSkip will look for skippable YouTube ads, and automatic
 
 3. Install CastSponsorSkip
    ```shell
-   sudo yum install castsponsorskip
+   sudo dnf install castsponsorskip
    ```
 </details>
 
@@ -138,19 +138,26 @@ systemctl enable --now castsponsorskip
 </details>
 
 ## Configuration
-You can configure the following parameters by setting the appropriate command line flag or environment variable:
+CastSponsorSkip can be configured with envs, command-line flags, or a config file. Some notable envs are listed below, but all [flags](./docs/castsponsorskip.md) can be set with envs.  
+To use an env that is not listed here, capitalize all characters, replace `-` with `_`, and prefix with `CSS_`. For example, `--paused-interval=1m` would become `CSS_PAUSED_INTERVAL=1m`.
 
-| Env                     | Description                                                                                                                                                        | Default        |
-|-------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------|----------------|
-| `CSS_DISCOVER_INTERVAL` | Interval to restart the DNS discovery client.                                                                                                                      | `5m`           |
-| `CSS_PAUSED_INTERVAL`   | Time to wait between each poll of the Cast device status when paused.                                                                                              | `1m`           |
-| `CSS_PLAYING_INTERVAL`  | Time to wait between each poll of the Cast device status when playing.                                                                                             | `1s`           |
-| `CSS_CATEGORIES`        | Comma-separated (or space-separated) SponsorBlock categories to skip, see [category list](https://github.com/ajayyy/SponsorBlock/blob/master/config.json.example). | `sponsor`      |
-| `CSS_YOUTUBE_API_KEY`   | [YouTube API key](https://developers.google.com/youtube/registering_an_application) for fallback video identification (required on some Chromecast devices).       | ` `            |
-| `CSS_NETWORK_INTERFACE` | Optionally configure the network interface to use.                                                                                                                 | All interfaces |
+### Notable Envs
+| Env                     | Description                                                                                                                                                  | Default        |
+|-------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------|----------------|
+| `CSS_DISCOVER_INTERVAL` | Interval to restart the DNS discovery client.                                                                                                                | `5m`           |
+| `CSS_PAUSED_INTERVAL`   | Time to wait between each poll of the Cast device status when paused.                                                                                        | `1m`           |
+| `CSS_PLAYING_INTERVAL`  | Time to wait between each poll of the Cast device status when playing.                                                                                       | `500ms`        |
+| `CSS_CATEGORIES`        | Comma-separated list of SponsorBlock categories to skip, see [category list](https://wiki.sponsor.ajay.app/w/Types#Category).                                | `sponsor`      |
+| `CSS_YOUTUBE_API_KEY`   | [YouTube API key](https://developers.google.com/youtube/registering_an_application) for fallback video identification (required on some Chromecast devices). | ` `            |
+| `CSS_MUTE_ADS`          | Mutes the device while an ad is playing.                                                                                                                     | `true`         |
 
+> **Note**
+> [sponsorblockcast envs](https://github.com/nichobi/sponsorblockcast#configuration) are also supported to simplify the migration to CastSponsorSkip. When used, a deprecation warning will be logged with an updated env key and value. There are currently no plans to remove these envs.
+
+### Flags
 See command-line flag documentation [here](./docs/castsponsorskip.md).
 
+### Systemd
 To modify the variables when running as a systemd service, create an override for the service with:
 
 ```shell
@@ -171,7 +178,8 @@ To modify the variables when running as a Docker container, you can add argument
 docker run --network=host --env CSS_PAUSED_INTERVAL=5m --env CSS_PLAYING_INTERVAL=2s --name=castsponsorskip ghcr.io/gabe565/castsponsorskip
 ```
 
-When using `docker-compose.yaml`, you can simply edit the `environment` directive as shown in the example file.
+### Docker Compose
+When using `docker-compose.yaml`, you can simply edit the `environment` directive as shown in the [example file](./docker-compose.yaml).
 
 ## Differences from sponsorblockcast
 - Uses the SponsorBlock [enhanced privacy endpoint](https://wiki.sponsor.ajay.app/w/API_Docs#GET_/api/skipSegments/:sha256HashPrefix). When searching for sponsored segments, the video ID is hashed and only the first 4 characters of the hash are passed to SponsorBlock. This allows CastSponsorSkip to fetch segments without telling SponsorBlock what video is being watched.

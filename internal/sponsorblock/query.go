@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"path"
@@ -33,22 +34,28 @@ type Segment struct {
 
 var ErrStatusCode = errors.New("invalid response status")
 
+var baseUrl = url.URL{
+	Scheme: "https",
+	Host:   "sponsor.ajay.app",
+}
+
 func QuerySegments(ctx context.Context, id string) ([]Segment, error) {
 	checksumBytes := sha256.Sum256([]byte(id))
 	checksum := hex.EncodeToString(checksumBytes[:])
 
-	query := make(url.Values, len(config.CategoriesValue))
-	for _, category := range config.CategoriesValue {
+	query := make(url.Values, len(config.Default.Categories)+len(config.Default.ActionTypes))
+	for _, category := range config.Default.Categories {
 		query.Add("category", category)
 	}
-
-	u := url.URL{
-		Scheme:   "https",
-		Host:     "sponsor.ajay.app",
-		Path:     path.Join("api", "skipSegments", checksum[:4]),
-		RawQuery: query.Encode(),
+	for _, actionType := range config.Default.ActionTypes {
+		query.Add("actionType", actionType)
 	}
 
+	u := baseUrl
+	u.Path = path.Join("api", "skipSegments", checksum[:4])
+	u.RawQuery = query.Encode()
+
+	slog.Debug("Request segments", "url", u.String())
 	req, err := http.NewRequest(http.MethodGet, u.String(), nil)
 	if err != nil {
 		return nil, err
@@ -69,7 +76,8 @@ func QuerySegments(ctx context.Context, id string) ([]Segment, error) {
 		if resp.StatusCode == http.StatusNotFound {
 			return nil, nil
 		} else {
-			return nil, fmt.Errorf("%w: %s", ErrStatusCode, resp.Status)
+			body, _ := io.ReadAll(resp.Body)
+			return nil, fmt.Errorf("%w: %s %s", ErrStatusCode, resp.Status, body)
 		}
 	}
 

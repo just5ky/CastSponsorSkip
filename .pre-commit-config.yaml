@@ -8,6 +8,7 @@ repos:
       - id: go-vet-mod
       - id: golangci-lint-mod
         args: [--fix]
+      - id: go-test-mod
 
   - repo: local
     hooks:
@@ -15,5 +16,4 @@ repos:
         name: usage-docs
         entry: go run ./internal/generate/docs
         language: system
-        type: [go]
         pass_filenames: false

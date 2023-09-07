@@ -1,5 +1,5 @@
 [Unit]
-Description=A Go program that skips sponsored YouTube content on all local Google Cast devices
+Description=Skip YouTube ads and sponsorships on all local Google Cast devices
 Documentation=https://github.com/gabe565/CastSponsorSkip
 After=network.target
 
@@ -7,6 +7,8 @@ After=network.target
 Restart=always
 ExecStart=/usr/bin/castsponsorskip
 TimeoutStopSec=20s
+User=daemon
+Group=daemon
 
 [Install]
 WantedBy=multi-user.target

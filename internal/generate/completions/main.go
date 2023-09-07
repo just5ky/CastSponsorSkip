@@ -12,7 +12,7 @@ import (
 var Shells = []string{"bash", "zsh", "fish"}
 
 func main() {
-	if err := os.RemoveAll("manpages"); err != nil {
+	if err := os.RemoveAll("completions"); err != nil {
 		panic(err)
 	}
 
@@ -21,6 +21,7 @@ func main() {
 	}
 
 	rootCmd := cmd.NewCommand("latest", "")
+	name := rootCmd.Name()
 	var buf bytes.Buffer
 	rootCmd.SetOut(&buf)
 
@@ -30,7 +31,7 @@ func main() {
 			panic(err)
 		}
 
-		f, err := os.Create(filepath.Join("completions", "castsponsorskip."+shell))
+		f, err := os.Create(filepath.Join("completions", name+"."+shell))
 		if err != nil {
 			panic(err)
 		}
