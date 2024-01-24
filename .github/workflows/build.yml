@@ -10,7 +10,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
       - name: Set up Go
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
           cache: false
@@ -28,7 +28,7 @@ jobs:
       - name: Change Cache Key
         run: echo '// ${{ github.job }}' >> go.sum
       - name: Set up Go
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
       - name: Test
@@ -46,17 +46,17 @@ jobs:
         with:
           fetch-depth: 0
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v2
+        uses: docker/setup-qemu-action@v3
       - name: Set up Buildx
-        uses: docker/setup-buildx-action@v2
+        uses: docker/setup-buildx-action@v3
       - name: Login to GitHub Container Registry
-        uses: docker/login-action@v2
+        uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ github.token }}
       - name: Set up Go
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
       - name: Set build variables
@@ -68,7 +68,7 @@ jobs:
           fi
           echo "args=$args" >> $GITHUB_OUTPUT
       - name: Run GoReleaser
-        uses: goreleaser/goreleaser-action@v4
+        uses: goreleaser/goreleaser-action@v5
         with:
           version: latest
           args: ${{ steps.vars.outputs.args }}
@@ -88,8 +88,7 @@ jobs:
             IMAGES+=("$DEST")
           done \
             < <(docker image ls --format=json | \
-              yq --input-format=json --no-doc '[.]' | \
-              yq --output-format=tsv '.[] |
+              yq --input-format=json --output-format=tsv '
                 select(.Repository == strenv(REPO)) |
                 [
                   .Repository + ":" + .Tag,
@@ -99,7 +98,7 @@ jobs:
 
           docker manifest create "$REPO:beta" "${IMAGES[@]}"
           docker manifest push "$REPO:beta"
-      - uses: actions/upload-artifact@v3
+      - uses: actions/upload-artifact@v4
         with:
           name: dist
           path: dist

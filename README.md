@@ -1,6 +1,11 @@
 # CastSponsorSkip
 
+<img src="./assets/icon.svg" alt="CastSponsorSkip Icon" align="right" width="90">
+
+[![GitHub release (latest by date)](https://img.shields.io/github/v/release/gabe565/CastSponsorSkip)](https://github.com/gabe565/CastSponsorSkip/releases)
 [![Build](https://github.com/gabe565/CastSponsorSkip/actions/workflows/build.yml/badge.svg)](https://github.com/gabe565/CastSponsorSkip/actions/workflows/build.yml)
+[![Go Report Card](https://goreportcard.com/badge/github.com/gabe565/CastSponsorSkip)](https://goreportcard.com/report/github.com/gabe565/CastSponsorSkip)
+[![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=gabe565_CastSponsorSkip&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=gabe565_CastSponsorSkip)
 
 A Go program that skips sponsored YouTube content and skippable ads on all local Google Cast devices, using the [SponsorBlock](https://github.com/ajayyy/SponsorBlock) API. This project was inspired by [sponsorblockcast](https://github.com/nichobi/sponsorblockcast), but written from scratch to decrease memory and CPU usage, and to work around some of its problems (see [Differences from sponsorblockcast](#differences-from-sponsorblockcast)).
 
@@ -28,6 +33,15 @@ Additionally, CastSponsorSkip will look for skippable YouTube ads, and automatic
   ```shell
   docker compose up -d
   ```
+</details>
+
+
+### Home Assistant Addon
+
+<details>
+  <summary>Click to expand</summary>
+
+A Home Assistant addon is provided by @alexbelgium and @bruvv. See [alexbelgium/hassio-addons](https://github.com/alexbelgium/hassio-addons/tree/master/sponsorblockcast) for installation instructions.
 </details>
 
 
@@ -142,14 +156,15 @@ CastSponsorSkip can be configured with envs, command-line flags, or a config fil
 To use an env that is not listed here, capitalize all characters, replace `-` with `_`, and prefix with `CSS_`. For example, `--paused-interval=1m` would become `CSS_PAUSED_INTERVAL=1m`.
 
 ### Notable Envs
-| Env                     | Description                                                                                                                                                  | Default        |
-|-------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------|----------------|
-| `CSS_DISCOVER_INTERVAL` | Interval to restart the DNS discovery client.                                                                                                                | `5m`           |
-| `CSS_PAUSED_INTERVAL`   | Time to wait between each poll of the Cast device status when paused.                                                                                        | `1m`           |
-| `CSS_PLAYING_INTERVAL`  | Time to wait between each poll of the Cast device status when playing.                                                                                       | `500ms`        |
-| `CSS_CATEGORIES`        | Comma-separated list of SponsorBlock categories to skip, see [category list](https://wiki.sponsor.ajay.app/w/Types#Category).                                | `sponsor`      |
-| `CSS_YOUTUBE_API_KEY`   | [YouTube API key](https://developers.google.com/youtube/registering_an_application) for fallback video identification (required on some Chromecast devices). | ` `            |
-| `CSS_MUTE_ADS`          | Mutes the device while an ad is playing.                                                                                                                     | `true`         |
+| Env                     | Description                                                                                                                                                  | Default   |
+|-------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------|-----------|
+| `CSS_DISCOVER_INTERVAL` | Interval to restart the DNS discovery client.                                                                                                                | `5m`      |
+| `CSS_PAUSED_INTERVAL`   | Time to wait between each poll of the Cast device status when paused.                                                                                        | `1m`      |
+| `CSS_PLAYING_INTERVAL`  | Time to wait between each poll of the Cast device status when playing.                                                                                       | `500ms`   |
+| `CSS_CATEGORIES`        | Comma-separated list of SponsorBlock categories to skip, see [category list](https://wiki.sponsor.ajay.app/w/Types#Category).                                | `sponsor` |
+| `CSS_YOUTUBE_API_KEY`   | [YouTube API key](https://developers.google.com/youtube/registering_an_application) for fallback video identification (required on some Chromecast devices). | ` `       |
+| `CSS_MUTE_ADS`          | Mutes the device while an ad is playing.                                                                                                                     | `true`    |
+| `CSS_DEVICES`           | Comma-separated list of device addresses. This will disable discovery and is not recommended unless discovery fails.                                         | `[]`      |
 
 > **Note**
 > [sponsorblockcast envs](https://github.com/nichobi/sponsorblockcast#configuration) are also supported to simplify the migration to CastSponsorSkip. When used, a deprecation warning will be logged with an updated env key and value. There are currently no plans to remove these envs.

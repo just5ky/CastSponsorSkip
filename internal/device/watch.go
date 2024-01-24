@@ -38,15 +38,14 @@ type Device struct {
 	cancel context.CancelFunc
 
 	entry  castdns.CastEntry
+	opts   []application.ApplicationOption
 	app    *application.Application
 	logger *slog.Logger
 
 	tickInterval time.Duration
 	ticker       *time.Ticker
 
-	prevVideoId    string
-	prevArtist     string
-	prevTitle      string
+	meta           VideoMeta
 	mediaSessionId int
 	segments       []sponsorblock.Segment
 	mutedSegmentId int
@@ -109,6 +108,10 @@ func (d *Device) Close() error {
 		d.ticker.Stop()
 	}
 
+	return d.closeApp()
+}
+
+func (d *Device) closeApp() error {
 	if d.app != nil {
 		defer func() {
 			if r := recover(); r != nil {
@@ -118,7 +121,6 @@ func (d *Device) Close() error {
 
 		return d.app.Close(false)
 	}
-
 	return nil
 }
 
@@ -176,25 +178,40 @@ func (d *Device) tick() error {
 	case StateAd:
 		d.muteAd(castVol)
 	default:
-		if castMedia.Media.ContentId == "" {
-			if err := d.queryVideoId(castMedia); err != nil {
-				d.logger.Error("Failed to find video on YouTube.", "error", err.Error())
+		if castMedia.Media.Metadata.Artist != "" {
+			d.meta.CurrArtist = castMedia.Media.Metadata.Artist
+		} else {
+			d.meta.CurrArtist = castMedia.Media.Metadata.Subtitle
+		}
+		d.meta.CurrTitle = castMedia.Media.Metadata.Title
+
+		if !config.Default.SkipSponsors {
+			if d.meta.CurrVideoId != d.meta.PrevVideoId || !d.meta.SameVideo() {
+				d.meta.PrevVideoId = d.meta.CurrVideoId
+				d.meta.PrevArtist = d.meta.CurrArtist
+				d.meta.PrevTitle = d.meta.CurrTitle
+				d.logger.Info("Detected video stream.", "video_id", castMedia.Media.ContentId)
 			}
-			if castMedia.Media.ContentId == "" {
-				d.changeTickInterval(config.Default.PausedInterval)
-				return nil
-			}
+			break
+		} else if castMedia.Media.ContentId != "" {
+			d.meta.CurrVideoId = castMedia.Media.ContentId
+		} else {
+			d.queryVideoId()
 		}
 
-		if castMedia.Media.ContentId != d.prevVideoId {
-			d.logger.Info("Detected video stream.", "video_id", castMedia.Media.ContentId)
-			d.prevVideoId = castMedia.Media.ContentId
+		if d.meta.CurrVideoId != d.meta.PrevVideoId {
+			d.segments = nil
+			if d.meta.CurrVideoId != "" {
+				d.logger.Info("Detected video stream.", "video_id", d.meta.CurrVideoId)
+				d.meta.PrevVideoId = d.meta.CurrVideoId
+				go d.querySegments(castMedia)
+			}
 			d.unmuteSegment()
-			d.querySegments(castMedia)
+			break
 		}
 
 		for i, segment := range d.segments {
-			if segment.Segment[0] <= castMedia.CurrentTime && castMedia.CurrentTime < segment.Segment[1]-1 {
+			if (segment.Segment[0]+float32(config.Default.SkipDelay.Seconds())) <= castMedia.CurrentTime && castMedia.CurrentTime < segment.Segment[1]-1 {
 				d.handleSegment(castMedia, castVol, segment, i)
 			}
 		}
@@ -215,13 +232,17 @@ func (d *Device) tick() error {
 }
 
 func (d *Device) connect(opts ...application.ApplicationOption) error {
+	logLevel := slog.LevelInfo
 	if d.app != nil {
-		_ = d.app.Close(false)
+		logLevel = slog.LevelDebug
+		_ = d.closeApp()
 	}
+	d.opts = opts
 	opts = append(
 		opts,
 		application.WithSkipadSleep(config.Default.PlayingInterval),
 		application.WithSkipadRetries(int(time.Minute/config.Default.PlayingInterval)),
+		application.WithIface(config.Default.NetworkInterface),
 	)
 	d.app = application.NewApplication(opts...)
 	d.app.AddMessageFunc(d.onMessage)
@@ -230,10 +251,11 @@ func (d *Device) connect(opts ...application.ApplicationOption) error {
 		if err := d.app.Start(d.entry.GetAddr(), d.entry.GetPort()); err != nil {
 			d.logger.Debug("Failed to connect to device. Retrying...", "try", try, "error", err.Error())
 
-			var subErr error
-			if d.entry, subErr = DiscoverCastDNSEntryByUuid(d.ctx, d.entry.UUID); subErr != nil {
+			newEntry, subErr := DiscoverCastDNSEntryByUuid(d.ctx, d.entry.UUID)
+			if subErr != nil {
 				return subErr
 			}
+			d.entry = newEntry
 
 			return err
 		}
@@ -242,7 +264,7 @@ func (d *Device) connect(opts ...application.ApplicationOption) error {
 		return err
 	}
 	if d.ctx.Err() == nil {
-		d.logger.Info("Connected to cast device.")
+		d.logger.Log(d.ctx, logLevel, "Connected to cast device.")
 	}
 
 	return nil
@@ -273,51 +295,63 @@ func (d *Device) onMessage(msg *api.CastMessage) {
 	case "CLOSE":
 		d.unmuteSegment()
 		d.segments = nil
-		d.prevTitle, d.prevArtist, d.prevVideoId = "", "", ""
+		d.meta.Clear()
 		d.mediaSessionId = 0
 	}
 }
 
 func (d *Device) update() error {
-	d.logger.Debug("Update")
+	d.logger.Debug("Requesting update.")
 
-	return util.Retry(d.ctx, 6, 500*time.Millisecond, func(try uint) error {
-		if err := d.app.Update(); err != nil {
-			d.logger.Debug("Failed to update device. Retrying...", "try", try, "error", err.Error())
+	err := d.app.Update()
+	if err != nil {
+		d.logger.Debug("Failed to update device. Reconnecting...", "error", err.Error())
+
+		if subErr := d.connect(d.opts...); subErr != nil {
+			d.logger.Debug("Failed to reconnect.", "error", subErr.Error())
 			return err
 		}
-		return nil
-	})
-}
 
-func (d *Device) queryVideoId(castMedia *cast.Media) error {
-	var currArtist string
-	if castMedia.Media.Metadata.Artist != "" {
-		currArtist = castMedia.Media.Metadata.Artist
-	} else {
-		currArtist = castMedia.Media.Metadata.Subtitle
-	}
-	currTitle := castMedia.Media.Metadata.Title
-
-	if currArtist == d.prevArtist && currTitle == d.prevTitle {
-		castMedia.Media.ContentId = d.prevVideoId
-	} else {
-		if config.Default.YouTubeAPIKey == "" {
-			d.logger.Warn("Video ID not found. Please set a YouTube API key.")
-		} else {
-			d.logger.Info("Video ID not found. Searching for video on YouTube...")
-			d.prevArtist = currArtist
-			d.prevTitle = currTitle
-			return util.Retry(d.ctx, 10, 500*time.Millisecond, func(try uint) (err error) {
-				castMedia.Media.ContentId, err = youtube.QueryVideoId(d.ctx, currArtist, currTitle)
-				if errors.Is(err, youtube.ErrNoVideos) || errors.Is(err, youtube.ErrNoId) {
-					return util.HaltRetries(err)
-				}
-				return err
-			})
+		if subErr := d.app.Update(); subErr == nil {
+			return nil
 		}
 	}
-	return nil
+
+	return err
+}
+
+func (d *Device) queryVideoId() {
+	if d.meta.Empty() || d.meta.SameVideo() {
+		return
+	}
+
+	d.meta.PrevArtist = d.meta.CurrArtist
+	d.meta.PrevTitle = d.meta.CurrTitle
+	d.unmuteSegment()
+	d.segments = nil
+
+	if config.Default.YouTubeAPIKey == "" {
+		d.logger.Error("Video ID not set. Please configure a YouTube API key.")
+	} else {
+		d.logger.Info("Video ID not set. Searching YouTube for video ID...")
+		go func() {
+			err := util.Retry(d.ctx, 3, time.Second, func(try uint) (err error) {
+				contentId, err := youtube.QueryVideoId(d.ctx, d.meta.CurrArtist, d.meta.CurrTitle)
+				if err != nil {
+					d.logger.Error("YouTube search failed.", "error", err.Error())
+					return err
+				}
+
+				d.meta.CurrVideoId = contentId
+				return nil
+			})
+			if err == nil {
+				d.logger.Debug("YouTube search returned video ID.", "video_id", d.meta.CurrVideoId)
+			} else {
+				d.logger.Error("Halting YouTube search retries.")
+			}
+		}()
+	}
 }
 
 func (d *Device) muteAd(castVol *cast.Volume) {
@@ -380,12 +414,16 @@ func (d *Device) unmuteSegment() {
 }
 
 func (d *Device) querySegments(castMedia *cast.Media) {
+	if d.meta.CurrVideoId == "" {
+		return
+	}
+
 	if err := util.Retry(d.ctx, 10, 500*time.Millisecond, func(try uint) (err error) {
-		d.segments, err = sponsorblock.QuerySegments(d.ctx, castMedia.Media.ContentId)
+		d.segments, err = sponsorblock.QuerySegments(d.ctx, d.meta.CurrVideoId)
 		return err
 	}); err == nil {
 		if len(d.segments) == 0 {
-			d.logger.Info("No segments found for video.", "video_id", castMedia.Media.ContentId)
+			d.logger.Info("No segments found for video.", "video_id", d.meta.CurrVideoId)
 		} else {
 			d.logger.Info("Found segments for video.", "segments", len(d.segments))
 		}

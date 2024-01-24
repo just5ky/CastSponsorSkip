@@ -15,19 +15,10 @@ import (
 var ErrDeviceNotFound = errors.New("device not found")
 
 func DiscoverCastDNSEntryByUuid(ctx context.Context, uuid string) (castdns.CastEntry, error) {
-	var iface *net.Interface
-	if config.Default.NetworkInterface != "" {
-		var err error
-		iface, err = net.InterfaceByName(config.Default.NetworkInterface)
-		if err != nil {
-			return castdns.CastEntry{}, err
-		}
-	}
-
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
-	entries, err := castdns.DiscoverCastDNSEntries(ctx, iface)
+	entries, err := castdns.DiscoverCastDNSEntries(ctx, config.Default.NetworkInterface)
 	if err != nil {
 		return castdns.CastEntry{}, err
 	}
@@ -64,32 +55,50 @@ func DiscoverCastDNSEntries(ctx context.Context, iface *net.Interface, ch chan c
 }
 
 func BeginDiscover(ctx context.Context) (<-chan castdns.CastEntry, error) {
-	var iface *net.Interface
-	if config.Default.NetworkInterface != "" {
-		var err error
-		iface, err = net.InterfaceByName(config.Default.NetworkInterface)
-		if err != nil {
-			return nil, err
-		}
-		slog.Info("Searching for devices...", "interface", config.Default.NetworkInterface)
-	} else {
-		slog.Info("Searching for devices...")
-	}
-
 	ch := make(chan castdns.CastEntry)
-	go func() {
-		defer func() {
-			close(ch)
-		}()
+	ctx, cancel := context.WithCancel(ctx)
 
-		for {
-			if ctx.Err() != nil {
-				return
+	go func() {
+		defer close(ch)
+		defer cancel()
+
+		if len(config.Default.DeviceAddrs) == 0 {
+			if config.Default.NetworkInterface != nil {
+				slog.Info("Searching for devices...", "interface", config.Default.NetworkInterfaceName)
+			} else {
+				slog.Info("Searching for devices...")
 			}
 
-			if err := DiscoverCastDNSEntries(ctx, iface, ch); err != nil {
-				slog.Error("Failed to discover devices.", "error", err.Error())
-				continue
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				default:
+					if err := DiscoverCastDNSEntries(ctx, config.Default.NetworkInterface, ch); err != nil {
+						slog.Error("Failed to discover devices.", "error", err.Error())
+						continue
+					}
+				}
+			}
+		} else {
+			if config.Default.NetworkInterface != nil {
+				slog.Info("Connecting to configured devices...", "interface", config.Default.NetworkInterfaceName)
+			} else {
+				slog.Info("Connecting to configured devices...")
+			}
+
+			timer := time.NewTimer(0)
+			defer timer.Stop()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-timer.C:
+					for _, castEntry := range config.Default.DeviceAddrs {
+						ch <- castEntry
+					}
+					timer.Reset(config.Default.DiscoverInterval)
+				}
 			}
 		}
 	}()

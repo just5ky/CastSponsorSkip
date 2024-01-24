@@ -25,6 +25,11 @@ func main() {
 		panic(err)
 	}
 
+	date, err := time.Parse(time.RFC3339, dateParam)
+	if err != nil {
+		panic(err)
+	}
+
 	if err := os.RemoveAll("manpages"); err != nil {
 		panic(err)
 	}
@@ -35,11 +40,6 @@ func main() {
 
 	rootCmd := cmd.NewCommand("beta", "")
 	name := rootCmd.Name()
-
-	date, err := time.Parse(time.RFC3339, dateParam)
-	if err != nil {
-		panic(err)
-	}
 
 	header := doc.GenManHeader{
 		Title:   strings.ToUpper(name),
@@ -63,6 +63,10 @@ func main() {
 		panic(err)
 	}
 	if err := f.Close(); err != nil {
+		panic(err)
+	}
+
+	if err := os.Chtimes(f.Name(), date, date); err != nil {
 		panic(err)
 	}
 }
