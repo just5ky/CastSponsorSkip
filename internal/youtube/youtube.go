@@ -5,8 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 
 	"github.com/gabe565/castsponsorskip/internal/config"
+	"github.com/gabe565/castsponsorskip/internal/util"
 	"google.golang.org/api/option"
 	"google.golang.org/api/youtube/v3"
 )
@@ -14,7 +16,8 @@ import (
 var (
 	ErrNotConnected = errors.New("not connected to YouTube")
 	ErrNoVideos     = errors.New("search returned no videos")
-	ErrNoId         = errors.New("search result does not have a valid video ID")
+	ErrNoMatches    = errors.New("no search results matched video metadata")
+	ErrNoId         = errors.New("search result missing video ID")
 )
 
 var service *youtube.Service
@@ -32,28 +35,36 @@ func CreateService(ctx context.Context, opts ...option.ClientOption) error {
 
 func QueryVideoId(ctx context.Context, artist, title string) (string, error) {
 	if service == nil {
-		return "", ErrNotConnected
+		return "", util.HaltRetries(ErrNotConnected)
 	}
 
 	query := fmt.Sprintf(`%q+intitle:%q`, artist, title)
 	slog.Debug("Searching for video ID", "query", query)
-	response, err := service.Search.List([]string{"id"}).
+	response, err := service.Search.List([]string{"id", "snippet"}).
 		Q(query).
-		MaxResults(1).
 		Context(ctx).
 		Do()
 	if err != nil {
 		return "", err
 	}
 
-	if len(response.Items) == 0 || response.Items[0] == nil {
-		return "", ErrNoVideos
+	if len(response.Items) == 0 {
+		return "", util.HaltRetries(ErrNoVideos)
 	}
 
-	item := response.Items[0]
-	if item.Id == nil || item.Id.VideoId == "" {
-		return "", ErrNoId
+	for _, item := range response.Items {
+		if item == nil || item.Snippet == nil {
+			continue
+		}
+		if !strings.Contains(strings.ToLower(item.Snippet.ChannelTitle), strings.ToLower(artist)) {
+			continue
+		}
+		if item.Id == nil || item.Id.VideoId == "" {
+			return "", util.HaltRetries(ErrNoId)
+		}
+
+		return item.Id.VideoId, nil
 	}
 
-	return item.Id.VideoId, nil
+	return "", util.HaltRetries(ErrNoMatches)
 }
